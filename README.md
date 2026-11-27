@@ -15,9 +15,9 @@
   <img src="docs/screenshots/full_workflow.jpeg" alt="End-to-End AI Workflow" width="100%"/>
 </p>
 
-| Desktop Interface (`web-view.png`) | Mobile Field View (`mobile-view.png`) |
+| Desktop Interface (`web-view.png`) | Mobile Field View (`mobile_view_iphone.jpg`) |
 | :---: | :---: |
-| <img src="docs/screenshots/web-view.png" alt="Desktop Web Interface" width="100%"/> | <img src="docs/screenshots/mobile-view.png" alt="Mobile Field View" width="260"/> |
+| <img src="docs/screenshots/web-view.png" alt="Desktop Web Interface" width="100%"/> | <img src="docs/screenshots/mobile_view_iphone.jpg" alt="Mobile Field View" width="260"/> |
 
 ---
 
