@@ -1,6 +1,6 @@
 # 🏛️ Sri Lankan Inscription Recognition & Archival Search
 
-[![Live App](https://img.shields.io/badge/Live_Demo-slinscriptionsml.web.app-FF6B00?style=for-the-badge&logo=firebase&logoColor=white)](https://slinscriptionsml.web.app/)
+[![Live App](https://img.shields.io/badge/Live_Demo-slinscriptionsmlbe.web.app-FF6B00?style=for-the-badge&logo=firebase&logoColor=white)](https://slinscriptionsmlbe.web.app/)
 [![Model](https://img.shields.io/badge/VLM-Qwen2.5--VL--3B--LoRA-1E3A8A?style=for-the-badge)](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)
 [![Dataset](https://img.shields.io/badge/Corpus-db.inscriptions.lk-0F766E?style=for-the-badge)](https://db.inscriptions.lk)
 
@@ -80,7 +80,7 @@ gcloud run deploy inscriptions-api \
 ```
 
 ### Step 7: Frontend Deployment on Firebase Hosting (`public/index.html` & `firebase.json`)
-Deploys the mobile-responsive single-page web interface to Firebase Hosting (`https://slinscriptionsml.web.app/`).
+Deploys the mobile-responsive single-page web interface to Firebase Hosting (`https://slinscriptionsmlbe.web.app/`).
 ```bash
 firebase deploy --only hosting
 ```
