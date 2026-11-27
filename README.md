@@ -15,9 +15,10 @@
   <img src="docs/screenshots/full_workflow.jpeg" alt="End-to-End AI Workflow" width="100%"/>
 </p>
 
-| Desktop Interface (`web-view.png`) | Mobile Field View (`mobile_view.png`) |
-| :---: | :---: |
-| <img src="docs/screenshots/web-view.png" alt="Desktop Web Interface" width="100%"/> | <img src="docs/screenshots/mobile_view.png" alt="Mobile Field View" width="260"/> |
+### Updated User Interface (Light, Dark & Mobile Views)
+| Light Mode (`update_ui_light.png`) | Dark Mode (`update_ui_dark.png`) | Mobile Field View (`new_ui_mobile.png`) |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/update_ui_light.png" alt="Desktop Light Mode UI" width="100%"/> | <img src="docs/screenshots/update_ui_dark.png" alt="Desktop Dark Mode UI" width="100%"/> | <img src="docs/screenshots/new_ui_mobile.png" alt="Mobile Field View" width="210"/> |
 
 ---
 
@@ -109,13 +110,3 @@ firebase deploy --only hosting
 * **Data Attribution:** The training dataset used in this project was sourced from **[db.inscriptions.lk](https://db.inscriptions.lk)**—all credit goes to their team for digitizing, cataloging, and preserving Sri Lanka’s epigraphic heritage.
 * **Dataset Scale & Accuracy:** Because the model was fine-tuned on a relatively small, specialized corpus (~1,500 records), predictions on heavily weathered or unseen inscriptions may have limited accuracy. Scaling up with a larger, richly labeled dataset would significantly improve transliteration and translation precision.
 * **Live Demo Performance:** The live web application is hosted on serverless free/scale-to-zero infrastructure purely for demonstration purposes. Please allow a brief cold-start warm-up time on your first request, and expect slightly slower inference speeds.
-
-## UI Screenshots
-
-### Desktop Views
-| Light Mode | Dark Mode |
-| :---: | :---: |
-| ![Updated UI Light](docs/screenshots/update_ui_light.png) | ![Updated UI Dark](docs/screenshots/update_ui_dark.png) |
-
-### Mobile View
-<img src="docs/screenshots/new_ui_mobile.png" alt="New UI Mobile" width="320" />
