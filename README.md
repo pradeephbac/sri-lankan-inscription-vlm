@@ -4,7 +4,7 @@
 [![Model](https://img.shields.io/badge/VLM-Qwen2.5--VL--3B--LoRA-1E3A8A?style=for-the-badge)](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)
 [![Dataset](https://img.shields.io/badge/Corpus-db.inscriptions.lk-0F766E?style=for-the-badge)](https://db.inscriptions.lk)
 
-> **Try the Live Application:** 👉 **[https://slinscriptionsml.web.app/](https://slinscriptionsml.web.app/)**  
+> **Try the Live Application:** 👉 **[https://slinscriptionsmlbe.web.app/](https://slinscriptionsmlbe.web.app/)**  
 > Upload a rubbing or field photograph of an ancient Sri Lankan Brahmi or Sinhala stone inscription to get an instant AI transliteration, English translation, paleographic classification, and visually matched archival plates.
 
 ---
