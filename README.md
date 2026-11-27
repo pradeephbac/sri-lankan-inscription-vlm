@@ -109,3 +109,13 @@ firebase deploy --only hosting
 * **Data Attribution:** The training dataset used in this project was sourced from **[db.inscriptions.lk](https://db.inscriptions.lk)**—all credit goes to their team for digitizing, cataloging, and preserving Sri Lanka’s epigraphic heritage.
 * **Dataset Scale & Accuracy:** Because the model was fine-tuned on a relatively small, specialized corpus (~1,500 records), predictions on heavily weathered or unseen inscriptions may have limited accuracy. Scaling up with a larger, richly labeled dataset would significantly improve transliteration and translation precision.
 * **Live Demo Performance:** The live web application is hosted on serverless free/scale-to-zero infrastructure purely for demonstration purposes. Please allow a brief cold-start warm-up time on your first request, and expect slightly slower inference speeds.
+
+## UI Screenshots
+
+### Desktop Views
+| Light Mode | Dark Mode |
+| :---: | :---: |
+| ![Updated UI Light](docs/screenshots/update_ui_light.png) | ![Updated UI Dark](docs/screenshots/update_ui_dark.png) |
+
+### Mobile View
+<img src="docs/screenshots/new_ui_mobile.png" alt="New UI Mobile" width="320" />
