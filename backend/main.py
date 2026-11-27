@@ -1,7 +1,7 @@
 import io
 import time
+import asyncio
 import tempfile
-import threading
 import traceback
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -14,12 +14,13 @@ MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB limit
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 CLIENT_APP_TOKEN = "sl-inscriptions-web"
 
-RATE_LIMIT_MAX = 10        # max analyses per IP
+RATE_LIMIT_MAX = 15        # max analyses per IP
 RATE_LIMIT_WINDOW = 3600   # per 1 hour (seconds)
 ip_requests: dict[str, list[float]] = defaultdict(list)
 
 analyzer: InscriptionAnalyzer | None = None
 load_error: str | None = None
+inference_semaphore = asyncio.Semaphore(1)
 
 
 def check_rate_limit(client_ip: str) -> None:
@@ -28,26 +29,22 @@ def check_rate_limit(client_ip: str) -> None:
     if len(recent) >= RATE_LIMIT_MAX:
         raise HTTPException(
             status_code=429,
-            detail="Rate limit exceeded (max 10 analyses per hour). Please try again later.",
+            detail="Rate limit exceeded (max 15 analyses per hour). Please try again later.",
         )
     recent.append(now)
     ip_requests[client_ip] = recent
 
 
-def _load_models() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global analyzer, load_error
     try:
-        print("[Startup] Loading InscriptionAnalyzer models in background thread...")
+        print("[Startup] Loading and warming up InscriptionAnalyzer before accepting traffic...")
         analyzer = InscriptionAnalyzer(train_only_index=False)
-        print("[Startup] InscriptionAnalyzer ready!")
+        print("[Startup] Server ready to accept requests!")
     except Exception:
         load_error = traceback.format_exc()
         print(f"[Startup ERROR] Failed to load models:\n{load_error}")
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    threading.Thread(target=_load_models, daemon=True).start()
     yield
 
 
@@ -78,10 +75,14 @@ def enhance_stone_contrast(pil_img: Image.Image) -> Image.Image:
 
 @app.get("/api/health")
 def health():
+    if load_error:
+        raise HTTPException(status_code=500, detail=load_error)
+    if analyzer is None:
+        raise HTTPException(status_code=503, detail="warming_up")
     return {
-        "status": "error" if load_error else ("ok" if analyzer is not None else "warming_up"),
-        "model_loaded": analyzer is not None,
-        "error": load_error,
+        "status": "ok",
+        "model_loaded": True,
+        "device": analyzer.vlm_device,
     }
 
 
@@ -106,7 +107,7 @@ async def analyze(
     if load_error:
         raise HTTPException(status_code=500, detail=f"Model failed to initialize: {load_error}")
     if analyzer is None:
-        raise HTTPException(status_code=503, detail="Model is still warming up. Please retry in 15 seconds.")
+        raise HTTPException(status_code=503, detail="Model is warming up. Please retry shortly.")
 
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WebP images are supported.")
@@ -123,9 +124,13 @@ async def analyze(
     processed_img = enhance_stone_contrast(img) if enhance else img
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tmp:
-            processed_img.save(tmp.name, format="JPEG", quality=95)
-            result = analyzer.predict(tmp.name, stream=False)
+        async with inference_semaphore:
+            loop = asyncio.get_running_loop()
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tmp:
+                processed_img.save(tmp.name, format="JPEG", quality=92)
+                result = await loop.run_in_executor(
+                    None, lambda: analyzer.predict(tmp.name, stream=False)
+                )
     except UnreadableInscriptionError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import platform
 import torch
 import numpy as np
@@ -18,6 +19,7 @@ from transformers import (
 from peft import PeftModel
 
 BASE_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
+MERGED_MODEL_DIR = "./merged_vlm"
 LORA_DIR = "./inscription_vlm_lora"
 EMBED_MODEL = "google/siglip-base-patch16-224"
 GUARD_MODEL = "openai/clip-vit-base-patch32"
@@ -44,13 +46,13 @@ class UnreadableInscriptionError(ValueError):
 
 class InscriptionAnalyzer:
     def __init__(self, train_only_index: bool = False):
+        t0 = time.time()
         self.vlm_device = "cpu"
         self.embed_device = "cpu"
 
-        num_threads = 1 if platform.system() == "Darwin" else 4
+        num_threads = 2 if platform.system() == "Darwin" else (os.cpu_count() or 8)
         torch.set_num_threads(num_threads)
-
-        print(f"Initializing InscriptionAnalyzer (device: cpu, threads: {num_threads}, offline cache)...")
+        print(f"Initializing CPU-Optimized InscriptionAnalyzer (threads: {num_threads})...")
 
         df = pd.read_csv(CSV_PATH).fillna("")
         if train_only_index and os.path.exists("train.jsonl"):
@@ -60,35 +62,93 @@ class InscriptionAnalyzer:
         self.df = df
 
         # 1. Load SigLIP for archival similarity search
-        print("[Startup 1/3] Loading SigLIP archive encoder...")
+        print("[Startup 1/4] Loading SigLIP archive encoder...")
         self.embed_processor = AutoImageProcessor.from_pretrained(EMBED_MODEL, local_files_only=True)
-        self.embed_model = AutoModel.from_pretrained(EMBED_MODEL, local_files_only=True).to(self.embed_device).eval()
+        self.embed_model = (
+            AutoModel.from_pretrained(EMBED_MODEL, local_files_only=True)
+            .to(self.embed_device)
+            .eval()
+        )
         cache_file = "image_embeddings_train.npz" if train_only_index else "image_embeddings_full.npz"
         self.db_embeddings, self.db_indices = self._load_or_build_index(cache_file)
 
         # 2. Load lightweight CLIP zero-shot guardrail
-        print("[Startup 2/3] Loading CLIP visual guardrail...")
+        print("[Startup 2/4] Loading CLIP visual guardrail...")
         self.guard_processor = CLIPProcessor.from_pretrained(GUARD_MODEL, local_files_only=True)
-        self.guard_model = CLIPModel.from_pretrained(GUARD_MODEL, local_files_only=True).to(self.embed_device).eval()
-
-        # 3. Load Fine-Tuned VLM and merge LoRA
-        print("[Startup 3/3] Loading Qwen2.5-VL-3B + merging LoRA...")
-        self.vlm_processor = AutoProcessor.from_pretrained(BASE_MODEL, local_files_only=True)
-        base_vlm = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            BASE_MODEL,
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True,
-            local_files_only=True,
-        )
-        self.vlm = (
-            PeftModel.from_pretrained(base_vlm, LORA_DIR)
-            .merge_and_unload()
-            .to(self.vlm_device)
+        self.guard_model = (
+            CLIPModel.from_pretrained(GUARD_MODEL, local_files_only=True)
+            .to(self.embed_device)
             .eval()
         )
-        print("[Startup 3/3] VLM ready!")
 
-    @torch.no_grad()
+        # 3. Load Pre-Merged VLM + Apply INT8 Dynamic Quantization for fast x86 CPU inference
+        print("[Startup 3/4] Loading & quantizing Qwen2.5-VL-3B for CPU...")
+        if os.path.exists(MERGED_MODEL_DIR):
+            self.vlm_processor = AutoProcessor.from_pretrained(
+                MERGED_MODEL_DIR,
+                min_pixels=128 * 28 * 28,
+                max_pixels=256 * 28 * 28,
+                local_files_only=True,
+            )
+            vlm_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                MERGED_MODEL_DIR,
+                torch_dtype=torch.float32,
+                attn_implementation="sdpa",
+                low_cpu_mem_usage=True,
+                local_files_only=True,
+            ).eval()
+        else:
+            self.vlm_processor = AutoProcessor.from_pretrained(
+                BASE_MODEL,
+                min_pixels=128 * 28 * 28,
+                max_pixels=256 * 28 * 28,
+                local_files_only=True,
+            )
+            base_vlm = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                BASE_MODEL,
+                torch_dtype=torch.float32,
+                attn_implementation="sdpa",
+                low_cpu_mem_usage=True,
+                local_files_only=True,
+            )
+            vlm_model = PeftModel.from_pretrained(base_vlm, LORA_DIR).merge_and_unload().eval()
+
+        # Quantize Linear layers to INT8 on Linux x86_64 (Cloud Run) for 2.5x-4x faster CPU decoding
+        if platform.system() == "Linux":
+            print("  Applying INT8 dynamic quantization to Linear layers...")
+            vlm_model = torch.ao.quantization.quantize_dynamic(
+                vlm_model, {torch.nn.Linear}, dtype=torch.qint8
+            )
+
+        self.vlm = vlm_model.to(self.vlm_device).eval()
+
+        # 4. Warmup pass so PyTorch CPU kernels & KV-cache buffers are pre-allocated
+        print("[Startup 4/4] Running CPU warmup pass...")
+        self._warmup()
+        print(f"[Startup Complete] Ready in {time.time() - t0:.2f}s!")
+
+    @torch.inference_mode()
+    def _warmup(self) -> None:
+        dummy = Image.new("RGB", (224, 224), color=(128, 128, 128))
+        _ = self._embed_image(dummy)
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image"},
+                    {"type": "text", "text": "Read."},
+                ],
+            }
+        ]
+        text_input = self.vlm_processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self.vlm_processor(
+            text=[text_input], images=[dummy], return_tensors="pt"
+        ).to(self.vlm_device)
+        _ = self.vlm.generate(**inputs, max_new_tokens=4, do_sample=False, use_cache=True)
+
+    @torch.inference_mode()
     def _check_is_historic_inscription(self, img: Image.Image, max_archive_score: float) -> None:
         inputs = self.guard_processor(
             text=GUARDRAIL_LABELS,
@@ -115,7 +175,7 @@ class InscriptionAnalyzer:
                 "Cannot read this image. Please upload a photograph or rubbing of a historic stone inscription."
             )
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _embed_image(self, img: Image.Image) -> np.ndarray:
         inputs = self.embed_processor(images=img.convert("RGB"), return_tensors="pt").to(self.embed_device)
         feats = self.embed_model.get_image_features(**inputs)
@@ -170,8 +230,9 @@ class InscriptionAnalyzer:
             })
         return results, max_score
 
-    @torch.no_grad()
-    def predict(self, user_image_path: str, stream: bool = True) -> dict:
+    @torch.inference_mode()
+    def predict(self, user_image_path: str, stream: bool = False) -> dict:
+        t_start = time.time()
         img = Image.open(user_image_path).convert("RGB")
         query_emb = self._embed_image(img)
         similar_records, max_archive_score = self.find_similar_inscriptions(query_emb, top_k=3)
@@ -179,13 +240,13 @@ class InscriptionAnalyzer:
         self._check_is_historic_inscription(img, max_archive_score)
 
         prompt = (
-            "You are an expert Sri Lankan epigraphist. Analyze the uploaded inscription image "
-            "and return a valid JSON object containing: transliteration, translation, footnotes, "
-            "period, language, sinhala_prakrit, script, likely_site, and reference_publication."
+            "Expert Sri Lankan epigraphist. Return ONLY compact JSON with keys: "
+            "transliteration, translation, footnotes, period, language, sinhala_prakrit, "
+            "script, likely_site, reference_publication."
         )
 
         img_resized = img.copy()
-        img_resized.thumbnail((384, 384))
+        img_resized.thumbnail((336, 336))
 
         messages = [
             {
@@ -196,16 +257,19 @@ class InscriptionAnalyzer:
                 ],
             }
         ]
-        text_input = self.vlm_processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = self.vlm_processor(text=[text_input], images=[img_resized], return_tensors="pt").to(self.vlm_device)
+        text_input = self.vlm_processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self.vlm_processor(
+            text=[text_input], images=[img_resized], return_tensors="pt"
+        ).to(self.vlm_device)
 
-        print("[VLM] Generating response...")
         streamer = TextStreamer(self.vlm_processor.tokenizer, skip_prompt=True) if stream else None
         output_ids = self.vlm.generate(
             **inputs,
-            max_new_tokens=260,
-            repetition_penalty=1.15,
+            max_new_tokens=150,
             do_sample=False,
+            use_cache=True,
             streamer=streamer,
         )
         generated_ids = output_ids[:, inputs["input_ids"].shape[1]:]
@@ -217,7 +281,11 @@ class InscriptionAnalyzer:
         except json.JSONDecodeError:
             predicted_data = {"transliteration": raw_output}
 
+        elapsed = round(time.time() - t_start, 2)
+        print(f"[VLM] CPU Prediction finished in {elapsed}s")
+
         return {
             "prediction": predicted_data,
             "related_inscriptions": similar_records,
+            "inference_seconds": elapsed,
         }
