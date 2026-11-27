@@ -6,7 +6,6 @@
 
 > **Try the Live Application:** 👉 <a href="https://slinscriptionsmlbe.web.app/" target="_blank" rel="noopener noreferrer"><strong>https://slinscriptionsmlbe.web.app/</strong></a>
 > Upload a rubbing or field photograph of an ancient Sri Lankan Brahmi or Sinhala stone inscription to get an instant AI transliteration, English translation, paleographic classification, and visually matched archival plates.
-
 ---
 
 ## ✨ Application & Training Showcase
