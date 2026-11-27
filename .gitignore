@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.gradio/
+.firebase/
+.DS_Store
+*.zip
+*.npz
+inscription_images/
+augmented_images/
